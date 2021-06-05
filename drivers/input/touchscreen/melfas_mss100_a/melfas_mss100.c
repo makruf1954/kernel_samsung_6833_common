@@ -1524,18 +1524,22 @@ static int mms_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	mms_init_config(info);
 	mms_config_input(info);
 
-	info->input_dev_pad = input_allocate_device();
-	if (!info->input_dev_pad) {
-		input_err(true, &client->dev, "%s: allocate device err!\n", __func__);
-		goto err_fw_update;
+	if (info->dtdata->support_dex) {
+		info->input_dev_pad = input_allocate_device();
+		if (!info->input_dev_pad) {
+			input_err(true, &client->dev, "%s: allocate device err!\n", __func__);
+			goto err_fw_update;
+		}
 	}
-	
-	info->input_dev_pad->name = "sec_touchpad";
-	mms_set_input_prop_pad(info, info->input_dev_pad);
-	ret = input_register_device(info->input_dev_pad);
-	if (ret) {
-		input_err(true, &client->dev, "%s: Unable to register %s input device\n", __func__, info->input_dev_pad->name);
-		goto err_input_pad_register_device;
+
+	if (info->dtdata->support_dex) {
+		info->input_dev_pad->name = "sec_touchpad";
+		mms_set_input_prop_pad(info, info->input_dev_pad);
+		ret = input_register_device(info->input_dev_pad);
+		if (ret) {
+			input_err(true, &client->dev, "%s: Unable to register %s input device\n", __func__, info->input_dev_pad->name);
+			goto err_input_pad_register_device;
+		}
 	}
 
 #ifdef USE_TSP_TA_CALLBACKS
@@ -1654,11 +1658,15 @@ err_test_dev_create:
 	mms_disable(info);
 	free_irq(info->irq, info);
 err_request_irq:
-	input_unregister_device(info->input_dev_pad);
-	info->input_dev_pad = NULL;
+	if (info->dtdata->support_dex) {
+		input_unregister_device(info->input_dev_pad);
+		info->input_dev_pad = NULL;
+	}
 err_input_pad_register_device:
-	if (info->input_dev_pad)
-		input_free_device(info->input_dev_pad);
+	if (info->dtdata->support_dex) {
+		if (info->input_dev_pad)
+			input_free_device(info->input_dev_pad);
+	}
 err_fw_update:
 #endif
 	mms_power_control(info, 0);
@@ -1733,6 +1741,11 @@ static int mms_remove(struct i2c_client *client)
 	
 	input_mt_destroy_slots(info->input_dev_pad);
 	input_unregister_device(info->input_dev_pad);
+	
+	if (info->dtdata->support_dex) {
+		input_mt_destroy_slots(info->input_dev_pad);
+		input_unregister_device(info->input_dev_pad);
+	}
 
 	input_mt_destroy_slots(info->input_dev);
 	input_unregister_device(info->input_dev);
