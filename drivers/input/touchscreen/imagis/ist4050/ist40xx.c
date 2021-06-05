@@ -2327,22 +2327,18 @@ static int ist40xx_probe(struct i2c_client *client,
 	if (ret)
 		goto err_read_info;
 
-	if (data->dt_data->support_dex) {
-		data->input_dev_pad = input_allocate_device();
-		if (!data->input_dev_pad) {
-			input_err(true, &client->dev, "%s: allocate device err!\n", __func__);
-			goto err_read_info;
-		}
+	data->input_dev_pad = input_allocate_device();
+	if (!data->input_dev_pad) {
+		input_err(true, &client->dev, "%s: allocate device err!\n", __func__);
+		goto err_read_info;
 	}
 
-	if (data->dt_data->support_dex) {
-		data->input_dev_pad->name = "sec_touchpad";
-		ist_set_input_prop_pad(data, data->input_dev_pad);
-		ret = input_register_device(data->input_dev_pad);
-		if (ret) {
-			input_err(true, &client->dev, "%s: Unable to register %s input device\n", __func__, data->input_dev_pad->name);
-			goto err_read_info;
-		}
+	data->input_dev_pad->name = "sec_touchpad";
+	ist_set_input_prop_pad(data, data->input_dev_pad);
+	ret = input_register_device(data->input_dev_pad);
+	if (ret) {
+		input_err(true, &client->dev, "%s: Unable to register %s input device\n", __func__, data->input_dev_pad->name);
+		goto err_read_info;
 	}
 
 	ret = ist40xx_init_update_sysfs(data);
