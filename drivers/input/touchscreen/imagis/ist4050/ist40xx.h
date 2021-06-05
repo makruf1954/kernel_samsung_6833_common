@@ -697,9 +697,7 @@ struct ist40xx_dt_data {
 	u32 cm_spec_gap;
 	bool enable_settings_aot;
 	bool support_fod;
-	bool enable_fpcb_noise_test;
-	bool support_open_short_test;
-	bool support_mis_calibration_test;
+	bool support_dex;
 };
 
 struct ist40xx_data {
@@ -709,6 +707,7 @@ struct ist40xx_data {
 	struct mutex aod_lock;
 	struct i2c_client *client;
 	struct input_dev *input_dev;
+	struct input_dev *input_dev_pad;
 	struct input_dev *input_dev_proximity;
 	struct ist40xx_dt_data *dt_data;
 	struct sec_tclm_data *tdata;
