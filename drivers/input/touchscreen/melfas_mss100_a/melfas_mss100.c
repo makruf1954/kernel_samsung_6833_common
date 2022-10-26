@@ -1741,11 +1741,6 @@ static int mms_remove(struct i2c_client *client)
 	
 	input_mt_destroy_slots(info->input_dev_pad);
 	input_unregister_device(info->input_dev_pad);
-	
-	if (info->dtdata->support_dex) {
-		input_mt_destroy_slots(info->input_dev_pad);
-		input_unregister_device(info->input_dev_pad);
-	}
 
 	input_mt_destroy_slots(info->input_dev);
 	input_unregister_device(info->input_dev);
