@@ -42,6 +42,16 @@ function add_ksu() {
      fi
 }
 
+function check_tools() {
+    local tools=("git" "curl" "wget" "make" "zip")
+    for tool in "${tools[@]}"; do
+        if ! command -v "$tool" &> /dev/null; then
+            echo -e "$red Tool $tool is required but not installed. Aborting... $reset"
+            exit 1
+        fi
+    done
+}
+
 function install_dependencies() {
     echo -e "${cyan}==> Instalasi dependensi...${reset}"
     sudo apt update
@@ -150,7 +160,7 @@ function build_kernel() {
         return 1
     fi
 
-    # Build kernel
+    # Build kernel 
     make -j$(nproc --all) \
         O=out \
         ARCH=arm64 \
@@ -165,12 +175,13 @@ function build_kernel() {
         CC=clang \
         DTC_EXT=dtc \
         CROSS_COMPILE=aarch64-linux-gnu- \
-        CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee full-build.log
+        CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+        >full-build.log 2>&1
 
-    # Check for errors
-    grep -Ei "(error|warning)" full-build.log > log.txt
-
-    if grep -q "error:" full-build.log || [ ! -f $kernel ]; then
+    # Check for errors  
+    grep -Ei "(error|warning)" full-build.log > log.txt   
+    
+    if grep -q "error:" full-build.log || [ ! -f "$kernel" ]; then
         echo -e "${red}[!] Build gagal${reset}"
         send_error_log
         cleanup_files
@@ -201,6 +212,7 @@ function build_kernel() {
 # ============================
 BUILD_START=$(date +"%s")
 add_ksu
+check_tools
 install_dependencies
 clean
 setup_clang
