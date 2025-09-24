@@ -11,6 +11,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/dmapool.h>
 #include <linux/sched/clock.h>
+#include <linux/err.h>
 
 #if IS_ENABLED(CONFIG_MTK_CMDQ_MBOX_EXT)
 #include "cmdq-util.h"
@@ -595,7 +596,7 @@ void *cmdq_pkt_get_curr_buf_va(struct cmdq_pkt *pkt)
 
 	if (unlikely(!pkt->avail_buf_size))
 		if (cmdq_pkt_add_cmd_buffer(pkt) < 0)
-			return -ENOMEM;
+			return ERR_PTR(-ENOMEM);
 
 	buf = list_last_entry(&pkt->buf, typeof(*buf), list_entry);
 
