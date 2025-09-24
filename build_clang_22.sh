@@ -2,7 +2,7 @@
 
 # Kernel Build Script by Mahiroo & improve zero
 
-trap 'echo -e "\n\033[91m[!] Build dibatalkan oleh user.\033[0m"; tg_channelcast " <b>Build kernel dibatalkan oleh user!</b>"; cleanup_files; exit 1' INT
+trap 'echo -e "\n\033[91m[!] Build dibatalkan.\033[0m"; [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ] && tg_channelcast " <b>Build dibatalkan!</b>"; cleanup_files; exit 1' INT
 exec > >(tee -a build.log) 2>&1
 
 # ============================
@@ -170,7 +170,7 @@ function build_kernel() {
     # Check for errors
     grep -Ei "(error|warning)" full-build.log > log.txt
 
-    if grep -q "error:" full-build.log || [ ! -f out/arch/arm64/boot/Image ]; then
+    if grep -q "error:" full-build.log || [ ! -f $kernel ]; then
         echo -e "${red}[!] Build gagal${reset}"
         send_error_log
         cleanup_files
