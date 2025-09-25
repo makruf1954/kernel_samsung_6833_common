@@ -1,0 +1,26 @@
+name: Builder
+
+on:
+  workflow_dispatch:
+  
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl wget make zip python3
+
+      - name: Start Build
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          bash build.sh
