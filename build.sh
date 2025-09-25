@@ -9,7 +9,7 @@ exec > >(tee -a build.log) 2>&1
 # Setup
 # ============================
 PHONE="a22x"
-DEFCONFIG="a22x_defconfig"
+DEFCONFIG="azure_defconfig"
 ZIPNAME="A22-$(date '+%Y%m%d-%H%M').zip"
 KSU="$(pwd)/KernelSU-Next"
 COMPILERDIR="$(pwd)/zyc-clang"
