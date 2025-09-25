@@ -1,220 +1,263 @@
-#!/bin/sh
+#!/bin/bash
 
-# Kernel Build Script by Mahiroo & improve zero
+# Script version
+SCRIPT_VERSION="1.0"
 
-trap 'echo -e "\n\033[91m[!] Build dibatalkan.\033[0m"; [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ] && tg_channelcast " <b>Build dibatalkan!</b>"; cleanup_files; exit 1' INT
-exec > >(tee -a build.log) 2>&1
+set -e
 
-# ============================
-# Setup
-# ============================
-PHONE="a22x"
-DEFCONFIG="azure_defconfig"
-ZIPNAME="A22-$(date '+%Y%m%d-%H%M').zip"
-KSU="$(pwd)/KernelSU-Next"
-COMPILERDIR="$(pwd)/zyc-clang"
-export KBUILD_BUILD_USER="zero"
+# Define global variables
+SRC="$(pwd)"
+export KBUILD_BUILD_USER="azure"
 export KBUILD_BUILD_HOST="naifiprjkt"
+ANYKERNEL3_DIR=AK
+DEVICE=A226B
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+KERNEL_DEFCONFIG=azure_defconfig
+LOG_FILE="$SRC/build.log"
+COMPILATION_LOG="$SRC/compilation.log"
+FINAL_KERNEL_ZIP="$DEVICE-$BRANCH-$(date +%Y%m%d-%H%M).zip"
+TOOLCHAIN_DIR="$SRC/toolchain"
+OUT_IMG="$SRC/out/arch/arm64/boot/Image.gz"
 
-# ============================
-# Variabel
-# ============================
-DATE="$(date '+%Y-%m-%d %H:%M:%S')"
-kernel="out/arch/arm64/boot/Image.gz"
-dtb="out/arch/arm64/boot/dtb.img"
-dtbo="out/arch/arm64/boot/dtbo.img"
+# Define architecture
+ARCH=arm64
 
-# ============================
-# Warna output
-# ============================
-cyan="\033[96m"
-green="\033[92m"
-red="\033[91m"
-reset="\033[0m"
+# Remove old kernel zip files
+rm -rf *.zip
+rm -rf AK/Image*
+rm -rf AK/*.zip
 
-function add_ksu() {
-     if [ -d $KSU ]; then
-         echo -e "$green[!] KernelSU is ready...${reset}"
-     else 
-         echo -e "$red[!] KernelSU Dir Not Found!!!${reset}"
-         echo -e "$green[+] Wait.. Cloning KernelSU...${reset}"
-         curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
-     fi
+# Color definitions
+red='\033[0;31m'
+green='\033[0;32m'
+yellow='\033[0;33m'
+blue='\033[0;34m'
+cyan='\033[0;36m'
+nocol='\033[0m'
+
+# function clone KernelSU
+check_ksu() {
+    if [ ! -d "$SRC/KernelSU-Next" ]; then
+	    echo -e "$red KernelSU not found in $SRC/KernelSU-Next, Cloning...$nocol"
+	    curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/next/kernel/setup.sh" | bash -s next
+    else
+	    echo -e "$green KernelSU already $nocol"
+    fi
 }
 
-function check_tools() {
+# Function to log messages
+log() {
+    echo -e "$1" | tee -a "$LOG_FILE"
+}
+
+# Function to check required tools
+check_tools() {
     local tools=("git" "curl" "wget" "make" "zip")
     for tool in "${tools[@]}"; do
         if ! command -v "$tool" &> /dev/null; then
-            echo -e "$red Tool $tool is required but not installed. Aborting... $reset"
+            log "$red Tool $tool is required but not installed. Aborting... $nocol"
             exit 1
         fi
     done
 }
 
-function install_dependencies() {
-    echo -e "${cyan}==> Instalasi dependensi...${reset}"
-    sudo apt update
-    sudo apt install -y bc cpio flex bison aptitude git python-is-python3 tar aria2 perl wget curl lz4 libssl-dev device-tree-compiler zstd
-}
-
-function setup_clang() {
-    if [ -d $COMPILERDIR ]; then
-        echo -e "$green[!] Lets's Build UwU...${reset}"
+# Function to check for Telegram credentials
+check_telegram_credentials() {
+    if [[ -z "${CHAT_ID}" || -z "${BOT_TOKEN}" ]]; then
+        log "$red CHAT_ID and BOT_TOKEN are not set. Aborting... $nocol"
+        exit 1
     else
-        echo -e "$red[!] clang Dir Not Found!!!${reset}"
-        echo -e "$green[+] Wait.. Cloning clang...${reset}"
-        wget "$(curl -s https://raw.githubusercontent.com/ZyCromerZ/Clang/main/Clang-main-link.txt)" -O "zyc-clang.tar.gz"
-        rm -rf $COMPILERDIR 
-        mkdir $COMPILERDIR 
-        tar -xvf zyc-clang.tar.gz -C $COMPILERDIR
-        rm -rf zyc-clang.tar.gz
-        echo -e "$green[!] Lets's Build UwU...${reset}"
+        log "$green Telegram credentials found. $nocol"
     fi
 }
 
-function tg_channelcast() {
-    local msg=""
-    for POST in "$@"; do
-        msg+="${POST}"$'\n'
-    done
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-        -d chat_id="${CHAT_ID}" \
-        -d disable_web_page_preview=true \
-        -d parse_mode=HTML \
-        -d text="${msg}"
+# Function to set up toolchain
+set_toolchain() {
+    # Check if toolchain exists, if not clone it
+    if [ ! -d "$TOOLCHAIN_DIR" ]; then
+        log "$red Toolchain not found in $TOOLCHAIN_DIR, cloning...$nocol"
+        git clone --depth=1 https://gitlab.com/neel0210/toolchain.git "$TOOLCHAIN_DIR"
+    else
+        log "$green Toolchain found at $TOOLCHAIN_DIR $nocol"
+    fi
+
+    # Set GCC, Clang, and Clang Triple paths
+    export GCC64_PATH="$TOOLCHAIN_DIR/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-android-"
+    export CLANG_PATH="$TOOLCHAIN_DIR/clang/host/linux-x86/clang-r383902/bin/clang"
+    export CLANG_TRIPLE_PATH="$TOOLCHAIN_DIR/clang/host/linux-x86/clang-r383902/bin/aarch64-linux-gnu-"
 }
 
-function send_error_log() {
-    BUILD_END=$(date +"%s")
-    DIFF=$((BUILD_END - BUILD_START))
-    
-    tg_channelcast \
-        " <b>Build Error untuk $PHONE!</b>" \
-        " <b>Durasi:</b> <code>$((DIFF / 60)) menit $((DIFF % 60)) detik</code>" \
-        " <b>Log file dikirim untuk debugging</b>"
-    
-    curl -s -F "chat_id=${CHAT_ID}" \
-         -F "document=@log.txt" \
-         -F "caption=Error Build untuk $PHONE - $(date '+%Y-%m-%d %H:%M:%S')" \
-         "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" > /dev/null
+# Function to perform clean build
+perform_clean_build() {
+    log "$blue Performing clean build... $nocol"
+    make clean
+    rm -rf *.log
 }
 
-function upload_success_zip() {
+# Function to send logs to Telegram and exit
+send_logs_and_exit() {
+    log "$red Build failed! Preparing to send logs to Telegram... $nocol"
+    
+    # Create compilation log if it doesn't exist
+    if [ ! -f "$COMPILATION_LOG" ]; then
+        echo "Build failed at $(date)" > "$COMPILATION_LOG"
+        echo "Check build.log for more details" >> "$COMPILATION_LOG"
+        if [ -f "$LOG_FILE" ]; then
+            cat "$LOG_FILE" >> "$COMPILATION_LOG"
+        fi
+    fi
+    
+    local caption=$(printf "<b>Build Failed</b>\n<b>Branch:</b> %s\n<b>Last commit:</b> %s\n<b>Time:</b> %s" \
+        "$(sanitize_for_telegram "$(git rev-parse --abbrev-ref HEAD)")" \
+        "$(sanitize_for_telegram "$(git log -1 --pretty=format:'%s')")" \
+        "$(date +"%d-%m-%Y %H:%M")")
+    
+    curl -s -F "document=@$COMPILATION_LOG" \
+         --form-string "caption=${caption}" \
+         "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument?chat_id=${CHAT_ID}&parse_mode=HTML"
+    
+    log "$red Build logs sent to Telegram. Exiting... $nocol"
+    exit 1
+}
+
+# Function to sanitize text for Telegram
+sanitize_for_telegram() {
+    local input="$1"
+    echo "$input" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+# Function to build the kernel
+build_kernel() {
+    log "$blue **** Kernel defconfig is set to $KERNEL_DEFCONFIG **** $nocol"
+    log "$blue ***********************************************"
+    log "          BUILDING KAKAROT KERNEL          "
+    log "*********************************************** $nocol"
+    
+    # Set the defconfig
+    if ! make O=out ARCH="$ARCH" "$KERNEL_DEFCONFIG" 2>&1 | tee -a "$COMPILATION_LOG"; then
+        log "$red Defconfig failed! $nocol"
+        send_logs_and_exit
+    fi
+    
+    # Build kernel with output logging
+    if ! make -j$(nproc --all) O=out \
+        ARCH="$ARCH" \
+        CC="$CLANG_PATH" \
+        CLANG_TRIPLE="$CLANG_TRIPLE_PATH" \
+        CROSS_COMPILE="$GCC64_PATH" \
+        CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee -a "$COMPILATION_LOG"; then
+        log "$red Kernel compilation failed! $nocol"
+        send_logs_and_exit
+    fi
+    
+    # Check if kernel image was created
+    if [ ! -f "$OUT_IMG" ]; then
+        log "$red Kernel image not found after build! $nocol"
+        send_logs_and_exit
+    fi
+    
+    log "$green Kernel build completed successfully! $nocol"
+}
+
+# Function to zip kernel files
+zip_kernel_files() {
+    log "$blue **** Verifying AnyKernel3 Directory **** $nocol"
+
+    if [ ! -d "$SRC/AK" ]; then
+        git clone --depth=1 https://github.com/makruf1954/AnyKernel3.git -b a22x AK
+    else
+        log "$blue AnyKernel3 (AK) already present! $nocol"
+    fi
+
+    # Copy kernel image
+    cp "$OUT_IMG" "$ANYKERNEL3_DIR/"
+    
+    log "$cyan ***********************************************"
+    log "          Time to zip up!          "
+    log "*********************************************** $nocol"
+    
+    cd "$ANYKERNEL3_DIR/" || exit
+    zip -r9 "../$FINAL_KERNEL_ZIP" * -x README "$FINAL_KERNEL_ZIP"
+    cd "$SRC" || exit
+}
+
+# Function to upload kernel to Telegram
+upload_kernel_to_telegram() {
+    log "$red ***********************************************"
+    log "         Uploading to telegram         "
+    log "*********************************************** $nocol"
+
+    # Check if ZIP file exists
+    if [ ! -f "$FINAL_KERNEL_ZIP" ]; then
+        log "$red ZIP file $FINAL_KERNEL_ZIP not found! Cannot upload. $nocol"
+        return 1
+    fi
+
+    # Tanggal Dibuat
+    DATE=$(date +"%d-%m-%Y %H:%M")
+
     # Ambil kernel version
-    if [ -f "$kernel" ]; then
-        KERNEL_VER=$(gzip -dc "$kernel" | strings | grep -m1 "Linux version")
+    if [ -f "$OUT_IMG" ]; then
+        KERNEL_VER=$(zcat "$OUT_IMG" 2>/dev/null | strings | grep -m1 "Linux version" || echo "Version info not found")
     else
         KERNEL_VER="Unknown"
     fi
 
-    # Caption untuk sukses upload
-    CAPTION="*A22-$DATE*
+    # Create caption for successful build
+    CAPTION="*$DATE*
 \`\`\`
-LocalVersion :
 $KERNEL_VER
-\`\`\`
-*Flash via Recovery*"
+\`\`\`"
 
-    # Upload ZIP
-    curl -s -F "document=@$ZIPNAME" \
+    # Upload kernel ZIP to Telegram
+    log "$green Uploading kernel ZIP: $FINAL_KERNEL_ZIP $nocol"
+    
+    response=$(curl -s -F "document=@$FINAL_KERNEL_ZIP" \
          -F "chat_id=$CHAT_ID" \
          -F "caption=$CAPTION" \
          -F "parse_mode=Markdown" \
-         "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" > /dev/null
-    
+         "https://api.telegram.org/bot$BOT_TOKEN/sendDocument")
+
+    # Check if upload was successful
+    if echo "$response" | grep -q '"ok":true'; then
+        log "$green Kernel successfully uploaded to Telegram! $nocol"
+    else
+        log "$red Failed to upload kernel to Telegram. Response: $response $nocol"
+        return 1
+    fi
+}
+
+# Function to clean up
+clean_up() {
+    log "$cyan ***********************************************"
+    log "          All done !!!         "
+    log "*********************************************** $nocol"
+    rm -rf "$ANYKERNEL3_DIR" *.log *.zip
+}
+
+# Main script execution
+main() {
+    log "$green Starting kernel build script v$SCRIPT_VERSION $nocol"
+    check_ksu
+    check_tools
+    check_telegram_credentials
+    set_toolchain
+
+    BUILD_START=$(date +"%s")
+
+    perform_clean_build
+    build_kernel
+    zip_kernel_files
+
     BUILD_END=$(date +"%s")
-    DIFF=$((BUILD_END - BUILD_START))
-    
-    tg_channelcast \
-        " <b>Build Sukses!</b>" \
-        " <b>Device:</b> <code>$PHONE</code>" \
-        " <b>ZIP:</b> <code>$ZIPNAME</code>" \
-        " <b>Durasi:</b> <code>$((DIFF / 60)) menit $((DIFF % 60)) detik</code>"
+    DIFF=$(($BUILD_END - $BUILD_START))
+    log "$yellow Build completed in $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds. $nocol"
+
+    upload_kernel_to_telegram
+    clean_up
+
+    log "$green Script execution completed successfully! $nocol"
 }
 
-function clean() {
-    echo -e "${red}[!] Clean...${reset}"
-    rm -rf log.txt full-build.log out/full_defconfig "$ZIPNAME"
-}
-
-function cleanup_files() {
-    echo -e "${red}[!] Cleanup akhir...${reset}"
-    [ -f "$ZIPNAME" ] && rm -f "$ZIPNAME"
-    [ -f log.txt ] && rm -f log.txt
-    [ -f full-build.log ] && rm -f full-build.log
-    [ -f out/full_defconfig ] && rm -f out/full_defconfig
-}
-
-function build_kernel() {
-    export PATH="$COMPILERDIR/bin:$PATH"
-    
-    echo -e "${green}==================================\033[0m"
-    echo -e "${green}= [!] START BUILD ${DEFCONFIG}\033[0m"
-    echo -e "${green}==================================\033[0m"
-    
-    # Make defconfig
-    make -j$(nproc --all) O=out ARCH=arm64 ${DEFCONFIG}
-    if [ $? -ne 0 ]; then
-        echo -e "$red [!] DEFCONFIG FAILED ${reset}"
-        return 1
-    fi
-
-    # Build kernel 
-    make -j$(nproc --all) \
-        O=out \
-        ARCH=arm64 \
-        LLVM=1 \
-        LLVM_IAS=1 \
-        AR=llvm-ar \
-        NM=llvm-nm \
-        LD=ld.lld \
-        OBJCOPY=llvm-objcopy \
-        OBJDUMP=llvm-objdump \
-        STRIP=llvm-strip \
-        CC=clang \
-        DTC_EXT=dtc \
-        CROSS_COMPILE=aarch64-linux-gnu- \
-        CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-        >full-build.log 2>&1
-
-    # Check for errors  
-    grep -Ei "(error|warning)" full-build.log > log.txt   
-    
-    if grep -q "error:" full-build.log || [ ! -f "$kernel" ]; then
-        echo -e "${red}[!] Build gagal${reset}"
-        send_error_log
-        cleanup_files
-        return 1
-    fi
-
-    echo -e "${green}[+] Build sukses! Packing ZIP...${reset}"
-
-    # Pack ZIP
-    [ ! -d AnyKernel3 ] && git clone -q https://github.com/makruf1954/AnyKernel3.git -b a22x
-    cp -f "$kernel" "$dtb" AnyKernel3/
-    [ -f "$dtbo" ] && cp -f "$dtbo" AnyKernel3/
-    cd AnyKernel3 || return 1
-    zip -r9 "../$ZIPNAME" * -x .git README.md *placeholder
-    cd .. && rm -rf AnyKernel3
-
-    # Save defconfig
-    make O=out ARCH=arm64 savedefconfig
-    mv out/defconfig out/full_defconfig
-
-    # Upload and notify
-    upload_success_zip
-    cleanup_files
-}
-
-# ============================
-# Main Execution
-# ============================
-BUILD_START=$(date +"%s")
-add_ksu
-check_tools
-install_dependencies
-clean
-setup_clang
-build_kernel
-BUILD_FINISH=$(date +"%s")
+# Run main function
+main
