@@ -238,8 +238,8 @@ clean_up() {
 # Main script execution
 main() {
     log "$green Starting kernel build script v$SCRIPT_VERSION $nocol"
-    check_ksu
-    check_tools
+    #check_ksu
+    #check_tools
     check_telegram_credentials
     set_toolchain
 
